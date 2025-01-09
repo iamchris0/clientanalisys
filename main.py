@@ -5,6 +5,7 @@ import datetime
 import requests
 import plotly.express as px
 
+api_key = st.secrets["google_api_key"]
 
 def change(row):
     row = str(row).strip()
@@ -209,7 +210,7 @@ def main():
         if len(mas) > 0:
             for i in range(int(np.ceil(len(mas) / 25))):
                 destinations_chunk = "|".join(mas[25 * i : 25 * (i + 1)])
-                url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins=W4 5TF&destinations={destinations_chunk}&units=metric&mode=car&key={st.secrets['google_api_key']}"
+                url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins=W4 5TF&destinations={destinations_chunk}&units=metric&mode=car&key={api_key}"
                 response = requests.request("GET", url)
                 q = eval(response.text)
                 if q.get('status') == 'OK':
