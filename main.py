@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import datetime
 import requests
-from secrets import G_KEY
 import plotly.express as px
 
 
