@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 import requests
-import time
+from secrets import G_KEY
 import plotly.express as px
 
 
@@ -210,11 +210,7 @@ def main():
         if len(mas) > 0:
             for i in range(int(np.ceil(len(mas) / 25))):
                 destinations_chunk = "|".join(mas[25 * i : 25 * (i + 1)])
-                url = (
-                    "https://maps.googleapis.com/maps/api/distancematrix/json?origins="
-                    f"W4 5TF&destinations={destinations_chunk}&units=metric&mode=car&key=AIzaSyDy8vlLbtYjCxZ"
-                    "c5KTkdfAwtSzoCjew2Xs"  # <-- Replace with your valid API key
-                )
+                url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins=W4 5TF&destinations={destinations_chunk}&units=metric&mode=car&key={G_KEY}"
                 response = requests.request("GET", url)
                 q = eval(response.text)
                 if q.get('status') == 'OK':
