@@ -1,11 +1,17 @@
 import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder
 import pandas as pd
 import numpy as np
 import datetime
 import requests
 import plotly.express as px
 
+from io import BytesIO
+
+pd.set_option('future.no_silent_downcasting', True)
+
 api_key = st.secrets["google_api_key"]
+
 
 def change(row):
     row = str(row).strip()
@@ -54,7 +60,7 @@ def delta(row, df):
 def changedate(row):
     try:
         row = row.split()[0]
-        return pd.to_datetime(row)
+        return pd.to_datetime(row, dayfirst=True)
     except Exception:
         return np.nan
 
@@ -156,7 +162,7 @@ def locality(row):
 def date_cleanup(row):
     try:
         row = row.split()[0]
-        return pd.to_datetime(row, errors='ignore')
+        return pd.to_datetime(row, errors='ignore', dayfirst=True)
     except Exception:
         return row
 
@@ -212,7 +218,8 @@ def main():
                 destinations_chunk = "|".join(mas[25 * i : 25 * (i + 1)])
                 url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins=W4 5TF&destinations={destinations_chunk}&units=metric&mode=car&key={api_key}"
                 response = requests.request("GET", url)
-                q = eval(response.text)
+                q = response.json()
+                
                 if q.get('status') == 'OK':
                     a = destinations_chunk.split("|")
                     for elem in range(len(q['rows'][0]['elements'])):
@@ -220,15 +227,18 @@ def main():
                             dist = float(q['rows'][0]['elements'][elem]['distance']['text']
                                         .split()[0].replace(',', ''))
                             time_ = q['rows'][0]['elements'][elem]['duration']['text']
+                            # Get latitude and longitude
                         else:
                             dist = np.nan
                             time_ = np.nan
+                            lat, lon = np.nan, np.nan
+                        
                         d[a[elem]] = [dist, time_]
 
             frame = pd.DataFrame(d).T.reset_index().rename(columns={
                 'index': 'Mailing Postal Code',
                 0: 'Distance, km',
-                1: 'Duration'
+                1: 'Duration',
             })
             df = pd.merge(df, frame, how='left', on='Mailing Postal Code')
             df['Duration in min'] = df['Duration'].apply(get_in_time)
@@ -294,8 +304,8 @@ def main():
         piv_spend = piv_spend.reindex(index=['Unknown (0)', '1-99', '100-499', '500-999', '1000-4999', '5000+']).fillna(0)
 
         piv_freq = df.groupby(['Frequency', 'Total Transactions'])[['Total Spend', 'Total Transactions']].agg({
-            'Total Spend': [np.sum],
-            'Total Transactions': ['count', np.sum]
+            'Total Spend': ['sum'],
+            'Total Transactions': ['count', 'sum']
         })
         piv_freq.columns = piv_freq.columns.droplevel(0)
         piv_freq.columns = ['Total spend sum', 'Count of customer type', 'Total transactions']
@@ -403,6 +413,10 @@ def main():
             .fillna(0)
         )
 
+        postal_code_counts = df['Mailing Postal Code'].value_counts().reset_index()
+        postal_code_counts.columns = ['Postal Code', 'Count']
+
+
         # -------------------------------
         # Displaying results on Streamlit
         # -------------------------------
@@ -479,40 +493,36 @@ def main():
         piv_freq = piv_freq.reset_index()
 
         # Decide on pie vs. bar based on the chosen column
-        col10 = st.columns(1)[0]
-        col11, col12 = st.columns(2)
+        col10, col11 = st.columns(2)
 
-        piv_freq['Total Transactions'] = piv_freq['Total Transactions'].astype('object')
-        piv_freq['Total Transactions'] = piv_freq['Total Transactions'].round(2)
+        under_10 = piv_freq.query('Frequency == "Under 10"')
+        other_freq = piv_freq[piv_freq['Frequency'] != "Under 10"]
+
+        under_10["Total Transactions"] = under_10["Total Transactions"].astype(str)
+        other_freq['Total Transactions'] = other_freq['Total Transactions'].astype(str)        
 
         with col10:
+            fig_pie = px.pie(
+                under_10,
+                color='Total Transactions',
+                names='Total Transactions',
+                values="Total spend sum",
+                title="Total Spend Sum by Frequency of Visits (Under 10)"
+            )
+            fig_pie.update_traces(textinfo='value')
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col11:
             fig = px.bar(
-                piv_freq,
+                other_freq,
                 x="Total Transactions",
                 y="Total spend sum",
                 color="Frequency",
                 text="Total spend sum",
-                title="Total Transactions vs Total Spend Sum",
+                title="Total Spend Sum by Frequency of Visits (10+)",
+                category_orders={"Total Transactions": sorted(other_freq["Total Transactions"].unique())}  # Optional ordering
             )
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col11:
-            fig = px.pie(
-                piv_freq,
-                names="Frequency",
-                values="Count of customer type",
-                title=f"'Count of customer type' by Frequency",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col12:
-            fig = px.pie(
-                piv_freq,
-                names="Frequency",
-                values="Total transactions",
-                title=f"'Total transactions' by Frequency",
-            )
             st.plotly_chart(fig, use_container_width=True)
 
         # 3. Age Distribution
@@ -527,29 +537,32 @@ def main():
         fig_age.update_traces(textposition='outside')
         st.plotly_chart(fig_age, use_container_width=True)
 
-        # 4. Gender Pivot
-        fig_gender = px.bar(
-            piv_gender.reset_index(),
-            x='Gender',
-            y='n. customer type',
-            color='Gender',
-            title="Gender - # of Customers",
-            text='n. customer type'
-        )
-        fig_gender.update_traces(textposition='outside')
-        st.plotly_chart(fig_gender, use_container_width=True)
+        col_gend, col_lang = st.columns(2)
+        with col_gend:
+            # 4. Gender Pivot
+            fig_gender = px.bar(
+                piv_gender.reset_index(),
+                x='Gender',
+                y='n. customer type',
+                color='Gender',
+                title="Gender - # of Customers",
+                text='n. customer type'
+            )
+            fig_gender.update_traces(textposition='outside')
+            st.plotly_chart(fig_gender, use_container_width=True)
 
-        # 5. Language Pivot
-        fig_lang = px.bar(
-            piv_lang.reset_index(),
-            x='Language',
-            y='n. customer type',
-            color='Language',
-            title="Language - # of Customers",
-            text='n. customer type'
-        )
-        fig_lang.update_traces(textposition='outside')
-        st.plotly_chart(fig_lang, use_container_width=True)
+        with col_lang:
+            # 5. Language Pivot
+            fig_lang = px.bar(
+                piv_lang.reset_index(),
+                x='Language',
+                y='n. customer type',
+                color='Language',
+                title="Language - # of Customers",
+                text='n. customer type'
+            )
+            fig_lang.update_traces(textposition='outside')
+            st.plotly_chart(fig_lang, use_container_width=True)
 
         # 6. "How Found" Distribution
         how_found_df = how_found.rename(columns={'How did you find about us?': 'Channel', 'Share of category': 'Share (%)'})
@@ -561,18 +574,91 @@ def main():
         )
         st.plotly_chart(fig_how_found, use_container_width=True)
 
+        # 7. Locality distribution
+        local = local.reset_index()
+        local["y"] = ""  # Same value for all rows
+
+        fig = px.bar(
+            local,
+            x="count",
+            y="y",  # Use the dummy column
+            orientation='h',
+            text="count",  # Display the exact count value
+            labels={"count": "Amount", "y": ""},
+            color="Locality",  # Different colors for each locality
+            title="Distribution of Localities",
+        )
+
+        # Customize layout
+        fig.update_traces(
+            textposition="inside",  # Display text inside the bars
+            insidetextanchor="middle",
+        )
+
+        fig.update_layout(
+            barmode="stack",
+            xaxis=dict(title="Total Count"),
+            yaxis=dict(showticklabels=False),
+            showlegend=True,
+            width=700,  # Set the desired width
+            height=320
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+
+        # 8. Distribution graph
+        
+        fig = px.histogram(
+            df,
+            x="Duration in min",
+            nbins=50,  # Adjust the number of bins as needed
+            title="Distribution of Duration in Minutes",
+            labels={"Duration in min": "Duration (min)"},  # Axis labels
+            opacity=0.75,  # Adjust opacity for visual clarity
+        )
+
+        # Update layout for better readability
+        fig.update_layout(
+            xaxis_title="Duration (min)",
+            yaxis_title="Frequency",
+            bargap=0.1,  # Adjust gap between bars
+        )
+
+        # Display the chart in Streamlit
+        st.plotly_chart(fig, use_container_width=True)
+
         # -------------------------------
         # Display final table & download
         # -------------------------------
-        st.subheader("Processed Data Table")
-        st.dataframe(df)
 
-        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.subheader("Processed Data Table")
+        gb = GridOptionsBuilder.from_dataframe(df)
+        gb.configure_pagination(paginationAutoPageSize=True)  # Add pagination
+        gb.configure_default_column(editable=True, filter=True, wrapText=True)  # Enable filtering and text wrapping
+        gb.configure_auto_height()  # Adjust height automatically
+        grid_options = gb.build()
+
+        # Display the AgGrid table with custom settings
+        AgGrid(
+            df,
+            gridOptions=grid_options,
+            height=400,
+            width='100%',
+            allow_unsafe_jscode=True,  # Allow JS for advanced functionality
+        )
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+
+        excel_data = output.getvalue()
+
+        # Create a download button for the Excel file
         st.download_button(
-            label="Download Processed Data as CSV",
-            data=csv_data,
-            file_name="processed_data.csv",
-            mime="text/csv"
+            label="Download Processed Data as Excel",
+            data=excel_data,
+            file_name="processed_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 if __name__ == "__main__":
