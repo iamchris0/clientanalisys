@@ -525,19 +525,25 @@ def main():
             fig.update_traces(textposition="outside")
             st.plotly_chart(fig, use_container_width=True)
 
-        # 3. Age Distribution
-        fig_age = px.bar(
-            piv_age.reset_index(),
-            x='Age_category',
-            y='Count of age status',
-            color='Age_category',
-            title="Age Category - Count of Customers",
-            text='Count of age status'
-        )
-        fig_age.update_traces(textposition='outside')
-        st.plotly_chart(fig_age, use_container_width=True)
+        col12, col13 = st.columns(2)
 
-        col_gend, col_lang = st.columns(2)
+        with col12:
+            # 3. Age Distribution
+            fig_age = px.bar(
+                piv_age.reset_index(),
+                x='Age_category',
+                y='Count of age status',
+                color='Age_category',
+                title="Age Category - Count of Customers",
+                text='Count of age status'
+            )
+            fig_age.update_traces(textposition='outside')
+            st.plotly_chart(fig_age, use_container_width=True)
+
+        with col13:
+            st.write(piv_age)
+
+        col_gend, col_gend_data = st.columns(2)
         with col_gend:
             # 4. Gender Pivot
             fig_gender = px.bar(
@@ -551,6 +557,11 @@ def main():
             fig_gender.update_traces(textposition='outside')
             st.plotly_chart(fig_gender, use_container_width=True)
 
+        with col_gend_data:
+        # 4. Gender Pivot
+            st.write(piv_gender.T)
+
+        col_lang, col_lang_data = st.columns(2)
         with col_lang:
             # 5. Language Pivot
             fig_lang = px.bar(
@@ -564,6 +575,10 @@ def main():
             fig_lang.update_traces(textposition='outside')
             st.plotly_chart(fig_lang, use_container_width=True)
 
+        with col_lang_data:
+        # 4. Gender Pivot
+            st.write(piv_lang.T)
+
         # 6. "How Found" Distribution
         how_found_df = how_found.rename(columns={'How did you find about us?': 'Channel', 'Share of category': 'Share (%)'})
         fig_how_found = px.pie(
@@ -574,58 +589,21 @@ def main():
         )
         st.plotly_chart(fig_how_found, use_container_width=True)
 
-        # 7. Locality distribution
-        local = local.reset_index()
-        local["y"] = ""  # Same value for all rows
+        col14, col15 = st.columns(2)
 
-        fig = px.bar(
-            local,
-            x="count",
-            y="y",  # Use the dummy column
-            orientation='h',
-            text="count",  # Display the exact count value
-            labels={"count": "Amount", "y": ""},
-            color="Locality",  # Different colors for each locality
-            title="Distribution of Localities",
-        )
+        with col14:
+            # 7. Locality distribution
+            fig = px.pie(
+                local.reset_index(),
+                names='Locality',
+                values='count',
+                title="Distribution of Localities",
+                color='Locality',
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-        # Customize layout
-        fig.update_traces(
-            textposition="inside",  # Display text inside the bars
-            insidetextanchor="middle",
-        )
-
-        fig.update_layout(
-            barmode="stack",
-            xaxis=dict(title="Total Count"),
-            yaxis=dict(showticklabels=False),
-            showlegend=True,
-            width=700,  # Set the desired width
-            height=320
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-
-        # 8. Distribution graph
-        
-        fig = px.histogram(
-            df,
-            x="Duration in min",
-            nbins=50,  # Adjust the number of bins as needed
-            title="Distribution of Duration in Minutes",
-            labels={"Duration in min": "Duration (min)"},  # Axis labels
-            opacity=0.75,  # Adjust opacity for visual clarity
-        )
-
-        # Update layout for better readability
-        fig.update_layout(
-            xaxis_title="Duration (min)",
-            yaxis_title="Frequency",
-            bargap=0.1,  # Adjust gap between bars
-        )
-
-        # Display the chart in Streamlit
-        st.plotly_chart(fig, use_container_width=True)
+        with col15:
+            st.write(local)
 
         # -------------------------------
         # Display final table & download
